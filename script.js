@@ -346,7 +346,7 @@ $('pn').onchange=()=>{if(!SESS)try{localStorage.setItem('flname',myName())}catch
 
 const SB_URL='https://aqwadxoyotoavavlgfqr.supabase.co',SB_KEY='sb_publishable_RVck28AkaweI_U1fJrnWKw_WLEULhVV';
 /* --- transports --- */
-function wrapConn(c){const w={onmsg:null,onclose:null,send(o){try{c.send(o)}catch(e){}},close(){try{c.close()}catch(e){}}};c.on('data',d=>w.onmsg&&w.onmsg(d));c.on('close',()=>{w.cl=1;w.onclose&&w.onclose()});c.on('error',e=>{w.why=(e&&e.type)||'err';console.warn('[conn]',e)});try{const pc=c.peerConnection;pc.addEventListener('iceconnectionstatechange',()=>{w.ice=pc.iceConnectionState;console.warn('[ice]',w.ice)})}catch(e){}return w}
+function wrapConn(c){const w={onmsg:null,onclose:null,send(o){try{c.send(o)}catch(e){}},close(){try{c.close()}catch(e){}}};c.on('data',d=>w.onmsg&&w.onmsg(d));c.on('close',()=>{w.cl=1;w.onclose&&w.onclose()});c.on('error',e=>{w.why=(e&&e.type)||'err';dbg('conn error: '+((e&&e.type)||e))});try{const pc=c.peerConnection;pc.addEventListener('iceconnectionstatechange',()=>{w.ice=pc.iceConnectionState;dbg('ICE: '+w.ice)})}catch(e){}return w}
 function wrapPeer(p){const n={id:p.id,onconn:null,q:[],
 connect(id,ms=3500){return new Promise((ok,no)=>{let d=0;const c=p.connect(id,{serialization:'json',reliable:true});
 const eh=e=>{if(e.type=='peer-unavailable'&&String(e.message||'').includes(id))fail('none')};
@@ -367,7 +367,7 @@ p.on('open',()=>{if(!d){d=1;ok(wrapPeer(p))}});
 p.on('error',e=>{
     if(d)return;
 
-    const t=e&&e.type||'err';
+    const t=e&&e.type||'err';dbg('peer error: '+t);
 
     if(t==='network'||t==='socket-error'||t==='socket-closed'||t==='server-error'){
         try{
@@ -425,13 +425,15 @@ const to=setTimeout(()=>{no('timeout');try{ws.close()}catch(e){}},9000);
 ws.onopen=async()=>{clearTimeout(to);hb=setInterval(()=>tx('phoenix','heartbeat',{}),25000);
 if(!id){claiming=0;ok(n);return}
 try{const topic=await join('fl-'+id);bc(topic,{k:'who',id,nz});setTimeout(()=>{claiming=0;if(taken){dead();ws.close();no('unavailable-id')}else ok(n)},Math.round(Math.max(700,(n.rtt||300)*2+450)))}catch(e){no(e)}}})}};
-const TP=/[?&]bc\b/.test(location.search)?TP_BC:/[?&]sb\b/.test(location.search)?TP_SB:TP_PEER;
+let TP=/[?&]bc\b/.test(location.search)?TP_BC:/[?&]sb\b/.test(location.search)?TP_SB:TP_PEER;
 
 function withRelay(a,id){const n={id:a.id,q:a.q,_f:null,b:null,dead:0,
 get onconn(){return this._f},
 set onconn(f){this._f=f;a.onconn=f;if(this.b){this.b.onconn=f;this.b.q.splice(0).forEach(f)}},
 close(){this.dead=1;try{a.close()}catch(e){}try{this.b&&this.b.close()}catch(e){}}};
 TP_SB.node(id).then(b=>{if(n.dead){try{b.close()}catch(e){}return}n.b=b;if(n._f){b.onconn=n._f;b.q.splice(0).forEach(n._f)}}).catch(()=>{});return n}
+const DBGL=[];function dbg(m){DBGL.push(((performance.now()/1000)|0)+'s '+m);if(DBGL.length>14)DBGL.shift();console.warn('[net]',m);const e=document.getElementById('lbDbg');if(e)e.textContent=DBGL.join('\n')}
+const probe=(u,ms=5000)=>new Promise(r=>{const c=new AbortController(),t=setTimeout(()=>{c.abort();r(0)},ms);fetch(u,{mode:'no-cors',cache:'no-store',signal:c.signal}).then(()=>{clearTimeout(t);r(1)}).catch(()=>{clearTimeout(t);r(0)})});
 /* --- matchmaking: first player claims the slot id and hosts, others connect to it --- */
 async function matchmake(mode,st){
 const sid=s=>`${NETV}-${mode}-${st.map}-${s}`;let anon=null;
@@ -441,15 +443,15 @@ c.send({t:'join',n:myName(),c:cusArr()});setTimeout(()=>fin(0),Math.round(Math.m
 for(let s=0;s<12&&!st.x&&performance.now()<st.dl;s++){
 for(let tr=0;tr<2&&!st.x;tr++){
 anon=anon||await TP.node(null);
-let c=null,er='';try{c=await anon.connect(sid(s),9000)}catch(e){er=e}
+let c=null,er='';try{c=await anon.connect(sid(s),9000)}catch(e){er=e}dbg('slot '+s+': '+(c?'connected':'connect failed: '+er));
 if(st.x){try{anon.close()}catch(e){}return null}
-if(c){const h=await hand(c);if(h.ok)return{role:'client',node:anon,conn:c,buf:h.buf};try{c.close()}catch(e){}break}
+if(c){const h=await hand(c);dbg('handshake '+(h.ok?'ok':'failed'));if(h.ok)return{role:'client',node:anon,conn:c,buf:h.buf};try{c.close()}catch(e){}break}
 if(er=='timeout'&&TP===TP_PEER){lbSet('اتصال مستقیم ممکن نشد؛ تلاش از مسیر رله…',1);let sb=null,c2=null;
 try{sb=await TP_SB.node(null);c2=await sb.connect(sid(s))}catch(e){}
 if(st.x){try{sb&&sb.close()}catch(_){}try{anon.close()}catch(_){}return null}
 if(c2){const h2=await hand(c2);if(h2.ok){try{anon.close()}catch(_){}return{role:'client',node:sb,conn:c2,buf:h2.buf}}try{c2.close()}catch(_){}}
 try{sb&&sb.close()}catch(_){}break}
-if(er=='none'){try{const nd=await TP.node(sid(s));try{anon.close()}catch(e){}return{role:'host',node:TP===TP_PEER?withRelay(nd,sid(s)):nd}}catch(e){continue}}
+if(er=='none'){dbg('no room found → hosting');try{const nd=await TP.node(sid(s));try{anon.close()}catch(e){}return{role:'host',node:TP===TP_PEER?withRelay(nd,sid(s)):nd}}catch(e){continue}}
 break}}
 try{anon&&anon.close()}catch(e){}return null}
 
@@ -460,12 +462,18 @@ async function lobby(mode,mapSel){
 if(NT)return;const T=TARGET[mode],st={mode,T,x:0,map:mapSel||'any',dl:performance.now()+40000};NT=st;
 const mname=st.map=='any'?'تصادفی':(MAPS[mode].find(m=>m.id==st.map)||{}).n;
 $('lobby').style.display='flex';$('lbT').textContent=MN[mode]+' · '+mname;lbPlayers([],T);$('lbGo').style.display='none';
+let dg=document.getElementById('lbDbg');if(!dg){dg=document.createElement('pre');dg.id='lbDbg';dg.style.cssText='margin:6px 0 0;max-width:94vw;max-height:30vh;overflow:auto;text-align:left;direction:ltr;font:11px/1.4 monospace;color:#8fa;white-space:pre-wrap';$('lobby').appendChild(dg)}DBGL.length=0;dg.textContent='';
+lbSet('در حال بررسی اتصال به سرورها…',1);
+const[okP,okS]=await Promise.all([probe('https://0.peerjs.com/peerjs/id'),probe(SB_URL+'/auth/v1/health')]);
+dbg('PeerJS server: '+(okP?'OK':'unreachable')+' | Supabase: '+(okS?'OK':'unreachable'));
+if(st.x)return;
+if(TP===TP_PEER&&!okP&&okS){TP=TP_SB;dbg('PeerJS unreachable -> using relay transport')}
 const WHY={timeout:'سرور جواب نداد','server-error':'سرور PeerJS در دسترس نیست',network:'اتصال به سرور PeerJS قطع است','socket-error':'اتصال به سرور PeerJS برقرار نشد',ws:'اتصال به سرور برقرار نشد'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 for(let at=0;!st.x;at++){
 lbSet(at?'در حال تلاش دوباره برای اتصال…':'در حال اتصال به سرویس آنلاین…',1);
 let why='',r=null;
-try{await TP.load()}catch(e){why='سرویس آنلاین بارگذاری نشد؛ اینترنت یا فیلترینگ را بررسی کن'}
+try{await TP.load()}catch(e){if(okS&&TP===TP_PEER){TP=TP_SB;dbg('PeerJS library blocked -> using relay transport')}else why='سرویس آنلاین بارگذاری نشد؛ اینترنت یا فیلترینگ را بررسی کن'}
 if(st.x)return;
 if(!why){lbSet('در حال جستجوی اتاق…',1);st.dl=performance.now()+40000;try{r=await matchmake(mode,st)}catch(e){console.warn('[online]',e);why=WHY[e]||(e&&e.message)||String(e)}}
 if(st.x){if(r)try{r.node.close()}catch(e){}return}
