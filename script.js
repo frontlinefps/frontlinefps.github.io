@@ -467,7 +467,8 @@ lbSet('در حال بررسی اتصال به سرورها…',1);
 const[okP,okS]=await Promise.all([probe('https://0.peerjs.com/peerjs/id'),probe(SB_URL+'/auth/v1/health')]);
 dbg('PeerJS server: '+(okP?'OK':'unreachable')+' | Supabase: '+(okS?'OK':'unreachable'));
 if(st.x)return;
-if(TP===TP_PEER&&!okP&&okS){TP=TP_SB;dbg('PeerJS unreachable -> using relay transport')}
+if(!/[?&](bc|sb|peer)\b/.test(location.search)){TP=okS?TP_SB:TP_PEER;dbg('transport: '+(okS?'relay (WebSocket)':'direct (WebRTC)'))}
+if(!okP&&!okS)lbSet('به هیچ سرور آنلاینی وصل نمی‌شود؛ اینترنت، فیلترشکن یا VPN را بررسی کن',1);
 const WHY={timeout:'سرور جواب نداد','server-error':'سرور PeerJS در دسترس نیست',network:'اتصال به سرور PeerJS قطع است','socket-error':'اتصال به سرور PeerJS برقرار نشد',ws:'اتصال به سرور برقرار نشد'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 for(let at=0;!st.x;at++){
