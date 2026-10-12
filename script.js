@@ -355,10 +355,10 @@ p.on('error',eh);c.on('open',()=>{if(!d){d=1;p.off('error',eh);ok(wrapConn(c))}}
 close(){try{p.destroy()}catch(e){}}};
 p.on('connection',c=>c.on('open',()=>{const w=wrapConn(c);n.onconn?n.onconn(w):n.q.push(w)}));return n}
 const TP_PEER={async load(){if(window.Peer)return;
-for(const u of['https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js']){
-try{await new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s);setTimeout(no,9000)});if(window.Peer)return}catch(e){}}
+for(const u of['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js']){
+try{await new Promise((ok,no)=>{const e=document.createElement('script');const t=setTimeout(()=>{e.remove();no('t')},8000);e.onload=()=>{clearTimeout(t);ok()};e.onerror=()=>{clearTimeout(t);e.remove();no('e')};e.src=u;document.head.appendChild(e)});if(window.Peer)return}catch(e){}}
 throw'load'},
-node(id){return new Promise((ok,no)=>{let d=0;const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:global.stun.twilio.com:3478'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]};const p=id?new Peer(id,{debug:0,config:ICE}):new Peer({debug:0,config:ICE});p.on('disconnected',()=>{
+node(id){return new Promise((ok,no)=>{let d=0;const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:global.stun.twilio.com:3478'},{urls:'stun:openrelay.metered.ca:80'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp','turns:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]};const p=id?new Peer(id,{debug:0,config:ICE}):new Peer({debug:0,config:ICE});p.on('disconnected',()=>{
     try{
         if(!p.destroyed) p.reconnect();
     }catch(e){}
@@ -427,19 +427,29 @@ if(!id){claiming=0;ok(n);return}
 try{const topic=await join('fl-'+id);bc(topic,{k:'who',id,nz});setTimeout(()=>{claiming=0;if(taken){dead();ws.close();no('unavailable-id')}else ok(n)},Math.round(Math.max(700,(n.rtt||300)*2+450)))}catch(e){no(e)}}})}};
 const TP=/[?&]bc\b/.test(location.search)?TP_BC:/[?&]sb\b/.test(location.search)?TP_SB:TP_PEER;
 
+function withRelay(a,id){const n={id:a.id,q:a.q,_f:null,b:null,dead:0,
+get onconn(){return this._f},
+set onconn(f){this._f=f;a.onconn=f;if(this.b){this.b.onconn=f;this.b.q.splice(0).forEach(f)}},
+close(){this.dead=1;try{a.close()}catch(e){}try{this.b&&this.b.close()}catch(e){}}};
+TP_SB.node(id).then(b=>{if(n.dead){try{b.close()}catch(e){}return}n.b=b;if(n._f){b.onconn=n._f;b.q.splice(0).forEach(n._f)}}).catch(()=>{});return n}
 /* --- matchmaking: first player claims the slot id and hosts, others connect to it --- */
 async function matchmake(mode,st){
 const sid=s=>`${NETV}-${mode}-${st.map}-${s}`;let anon=null;
 const hand=c=>new Promise(res=>{const buf=[];let d=0;const fin=ok=>{if(!d){d=1;res({ok,buf})}};
 c.onmsg=m=>{buf.push(m);if(m&&m.t=='wel')fin(1);else if(m&&m.t=='busy')fin(0)};c.onclose=()=>fin(0);
-c.send({t:'join',n:myName(),c:cusArr()});setTimeout(()=>fin(0),Math.round(Math.max(4000,((anon&&anon.rtt)||300)*6+1500)))});
+c.send({t:'join',n:myName(),c:cusArr()});setTimeout(()=>fin(0),Math.round(Math.max(8000,((anon&&anon.rtt)||300)*6+1500)))});
 for(let s=0;s<12&&!st.x&&performance.now()<st.dl;s++){
 for(let tr=0;tr<2&&!st.x;tr++){
 anon=anon||await TP.node(null);
-let c=null,er='';try{c=await anon.connect(sid(s))}catch(e){er=e}
+let c=null,er='';try{c=await anon.connect(sid(s),9000)}catch(e){er=e}
 if(st.x){try{anon.close()}catch(e){}return null}
 if(c){const h=await hand(c);if(h.ok)return{role:'client',node:anon,conn:c,buf:h.buf};try{c.close()}catch(e){}break}
-if(er=='none'){try{const nd=await TP.node(sid(s));try{anon.close()}catch(e){}return{role:'host',node:nd}}catch(e){continue}}
+if(er=='timeout'&&TP===TP_PEER){lbSet('اتصال مستقیم ممکن نشد؛ تلاش از مسیر رله…',1);let sb=null,c2=null;
+try{sb=await TP_SB.node(null);c2=await sb.connect(sid(s))}catch(e){}
+if(st.x){try{sb&&sb.close()}catch(_){}try{anon.close()}catch(_){}return null}
+if(c2){const h2=await hand(c2);if(h2.ok){try{anon.close()}catch(_){}return{role:'client',node:sb,conn:c2,buf:h2.buf}}try{c2.close()}catch(_){}}
+try{sb&&sb.close()}catch(_){}break}
+if(er=='none'){try{const nd=await TP.node(sid(s));try{anon.close()}catch(e){}return{role:'host',node:TP===TP_PEER?withRelay(nd,sid(s)):nd}}catch(e){continue}}
 break}}
 try{anon&&anon.close()}catch(e){}return null}
 
