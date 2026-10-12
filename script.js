@@ -358,10 +358,36 @@ const TP_PEER={async load(){if(window.Peer)return;
 for(const u of['https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js']){
 try{await new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s);setTimeout(no,9000)});if(window.Peer)return}catch(e){}}
 throw'load'},
-node(id){return new Promise((ok,no)=>{let d=0;const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:global.stun.twilio.com:3478'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]};const p=id?new Peer(id,{debug:0,config:ICE}):new Peer({debug:0,config:ICE});p.on('disconnected',()=>{try{p.reconnect()}catch(e){}});
+node(id){return new Promise((ok,no)=>{let d=0;const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:global.stun.twilio.com:3478'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]};const p=id?new Peer(id,{debug:0,config:ICE}):new Peer({debug:0,config:ICE});p.on('disconnected',()=>{
+    try{
+        if(!p.destroyed) p.reconnect();
+    }catch(e){}
+});
 p.on('open',()=>{if(!d){d=1;ok(wrapPeer(p))}});
-p.on('error',e=>{if(!d){d=1;try{p.destroy()}catch(_){}no(e.type||'err')}});
-setTimeout(()=>{if(!d){d=1;try{p.destroy()}catch(_){}no('timeout')}},15000)})}};
+p.on('error',e=>{
+    if(d)return;
+
+    const t=e&&e.type||'err';
+
+    if(t==='network'||t==='socket-error'||t==='socket-closed'||t==='server-error'){
+        try{
+            if(!p.destroyed && p.disconnected)p.reconnect();
+        }catch(_){}
+        return;
+    }
+
+    d=1;
+    try{p.destroy()}catch(_){}
+    no(t);
+});
+
+setTimeout(()=>{
+    if(!d){
+        d=1;
+        try{p.destroy()}catch(_){}
+        no('timeout');
+    }
+},25000)})}};
 const TP_BC={async load(){},node(id){return new Promise((ok,no)=>{
 const ch=new BroadcastChannel('flbc'),me=id||('a'+Math.random().toString(36).slice(2,9)),cs2={},pend={};let taken=0;
 const mkc=(cid,peer)=>{const c={onmsg:null,onclose:null,send(d){ch.postMessage({k:'dat',cid,to:peer,d})},close(){ch.postMessage({k:'cls',cid,to:peer});delete cs2[cid]}};cs2[cid]=c;return c};
